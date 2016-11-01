@@ -41,7 +41,7 @@ medicare_tbl_indiv <-
   readxl::read_excel("./data-raw/medicare-tables.xlsx", sheet = "indiv") %>%
   data.table::as.data.table(.)
 
-medicare_tbl <- 
+medicare_tbl_wide <- 
   medicare_tbl_indiv %>%
   dplyr::mutate_each(funs(as.logical), sato, pto, sapto) %>%
   data.table::as.data.table(.) %>%
@@ -49,9 +49,23 @@ medicare_tbl <-
   # avoid cartesian joins
   unique
 
+medicare_tbl <- 
+  rbind("individual" = {
+    medicare_tbl_wide %>% 
+      select(fy_year, sato, pto, sapto, lower_threshold, upper_threshold, taper, rate, lower_up_for_each_child)
+  }, 
+  "family" = {
+    medicare_tbl_wide %>% 
+      select(fy_year, sato, pto, sapto, lower_threshold = lower_family_threshold, upper_threshold = upper_family_threshold, taper, rate, lower_up_for_each_child)
+    }, 
+  idcol = "family_status") %>%
+  mutate(taper = if_else(upper_threshold - lower_threshold <= 1, 1.0, taper)) %>%
+  select(fy_year, sapto, sato, pto, family_status, lower_threshold, lower_up_for_each_child, taper, rate) %>%
+  setkey(fy_year, sapto, sato, pto, family_status)
+  
+
 # To ensure faster versions of calculations do not evaluate NA.
 set(medicare_tbl, which(is.na(medicare_tbl[["lower_up_for_each_child"]])), "lower_up_for_each_child", 0)
-set(medicare_tbl, which(is.na(medicare_tbl[["upper_threshold"]])), "upper_threshold", 0)
 
 medicare_tbl %>% 
   readr::write_tsv("./data-raw/medicare_tbl.tsv")

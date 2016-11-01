@@ -72,6 +72,7 @@ medicare_levy <- function(income,
              sato = sato, 
              pto = pto,
              family_status = family_status) %>%
+    .[ ,ordering := 1:.N] %>%
     # Assume spouse income is included irrespective of Partner_status
     # This appears to be the correct treatment (e.g. if the Partner dies 
     # before the end of the tax year, they would have status 0 but 
@@ -80,21 +81,23 @@ medicare_levy <- function(income,
     # 
     # Enhancement: family taxable income should exclude super lump sums.
     .[ ,family_income := income + Spouse_income ] %>%
-    merge(medicare_tbl, 
-          by = c("fy_year", "sapto", "sato", "pto"),
-          sort = FALSE, 
-          all.x = TRUE) %>%
+    setkey(fy_year, sapto, sato, pto, family_status) %>%
+    # right outer join
+    medicare_tbl[.] %>%
     # Levy in the case of small incomes (s.7 of Act)
-    .[ ,medicare_levy := pminV(pmaxC(taper * (income - lower_threshold),
-                                     0), 
-                               rate * income)] %>%
     # Person who has spouse or dependants
     ## subs.8(5) of Act
-    .[ ,lower_family_threshold := lower_family_threshold + n_dependants * lower_up_for_each_child] %>%
-    .[ ,medicare_levy := pmaxC(medicare_levy - 
-                                 (family_status == "family") *
-                                 # pmaxC <= "(if any)" subs.8(2)(c) of Medicare Levy Act 1986
-                                 pmaxC(rate * lower_family_threshold - (taper - rate)  * (family_income - lower_family_threshold), 0),
-                               0)] %>%
+    .[ ,lower_threshold := lower_threshold + n_dependants * lower_up_for_each_child] %>%
+    .[ ,medicare_levy := pminV(pmaxC(taper * (family_income - lower_threshold),
+                                     0), 
+                               rate * family_income)] %>%
+    
+    # .[ ,lower_family_threshold := lower_family_threshold + n_dependants * lower_up_for_each_child] %>%
+    # .[ ,medicare_levy := pmaxC(medicare_levy - 
+    #                              (family_status == "family") *
+    #                              # pmaxC <= "(if any)" subs.8(2)(c) of Medicare Levy Act 1986
+    #                              pmaxC(rate * lower_family_threshold - (taper - rate)  * (family_income - lower_family_threshold), 0),
+    #                            0)] %>%
+    setorderv("ordering") %>%
     .[["medicare_levy"]]
 }
